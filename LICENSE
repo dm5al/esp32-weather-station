@@ -1,4 +1,7 @@
-MIT License
+MIT License (SPDX-License-Identifier: MIT)
+
+An OSI-approved open source licence: you may use, modify, redistribute and sell
+this software, commercially or otherwise, provided this notice is kept.
 
 Copyright (c) 2026 Dmitriy Aleksandrov
 
@@ -19,6 +22,14 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+DEVELOPMENT NOTE
+
+This project was written collaboratively with an AI assistant (Anthropic's
+Claude). Hardware bring-up was verified on real hardware; see README.md for
+which parts are confirmed on-device and which are not.
 
 ---
 

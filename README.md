@@ -7,6 +7,15 @@ every 15 minutes.
 
 No API keys, no accounts, no cloud service to sign up for.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
+![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.3%2B-orange)
+
+![Weather screen](docs/img/weather-screen.svg)
+
+<sub>Rendered from the firmware's own layout constants — not a photograph.
+More in **[docs/SCREENS.md](docs/SCREENS.md)**.</sub>
+
 ## Features
 
 - **Three languages** — English, Russian and German, switchable on the settings
@@ -28,6 +37,15 @@ No API keys, no accounts, no cloud service to sign up for.
   primitives, so they scale to any size and cost no flash. The large icon
   animates: rain falls, clouds drift, lightning strikes.
 - **Metric and European** — dates as `31.07`, wind in m/s, 24-hour clock.
+
+## Screens
+
+| | |
+|---|---|
+| [Weather screen](docs/SCREENS.md#weather-screen) | current conditions, 7-day forecast, clock |
+| [Days off](docs/SCREENS.md#days-off-with-a-public-holiday) | weekends and regional public holidays marked |
+| [Network picker](docs/SCREENS.md#network-picker) | scan, pick, on-screen keyboard |
+| [Settings](docs/SCREENS.md#settings) | language and network |
 
 ## Hardware
 
@@ -266,9 +284,29 @@ board is correct without the NVS override.
   PWM-capable backlight mod.
 - Unit switching (°F, hPa/inHg) alongside the language setting.
 
+## How this was built
+
+This project was developed collaboratively with an AI assistant (Anthropic's
+Claude), working against the real board rather than from a datasheet alone.
+Most of what is written down here — the CH422G driver-API clash, the GT911
+reset hold time, the bounce-buffer pairing, the PSRAM bandwidth contention —
+came out of that loop of flashing, reading the serial log and correcting a wrong
+first guess.
+
+Two things are worth stating plainly for anyone relying on this:
+
+- **Confirmed on hardware:** panel bring-up and timings, GT911 touch, Wi-Fi
+  setup and credential storage, IP geolocation, the Open-Meteo fetch, and the
+  full boot-to-forecast path.
+- **Not yet confirmed on hardware:** the public-holiday markings. The API
+  response was validated offline, but no holiday has fallen inside a live
+  forecast window yet.
+
 ## Licence and attribution
 
-Project code is MIT licensed — see [LICENSE](LICENSE).
+Open source under the MIT licence (`SPDX-License-Identifier: MIT`) — see
+[LICENSE](LICENSE). Use it, change it, ship it commercially; just keep the
+notice.
 
 Services, none of which need an API key:
 
