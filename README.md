@@ -86,7 +86,20 @@ CH422G outputs (silkscreen `EXIO<n>` is the chip's `IO<n>`, so EXIO1 is bit 1):
 | EXIO4 | SD card chip select |
 | EXIO5 | USB / CAN mux |
 
-## Building
+## Flashing a prebuilt image
+
+To run it without installing a toolchain, grab the images in
+**[firmware/](firmware/)** and flash the single merged file:
+
+```bash
+esptool.py --chip esp32s3 --port COM14 --baud 460800 write_flash 0x0 esp32_weather-merged.bin
+```
+
+Full instructions, checksums and troubleshooting: **[firmware/README.md](firmware/README.md)**.
+The images are built for the **8 MB** flash variant — check yours with
+`esptool.py flash_id` first.
+
+## Building from source
 
 Requires ESP-IDF **v5.3 or newer** (developed against v5.5.4).
 
