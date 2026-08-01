@@ -1,0 +1,9 @@
+# Keep LF in the repository regardless of the checkout platform. Without this,
+# working on Windows commits CRLF and every file shows as fully rewritten.
+* text=auto eol=lf
+
+# Must stay LF or they will not execute on Linux/macOS.
+*.sh text eol=lf
+
+# Generated font tables: large, machine-written, and not worth diffing.
+main/ui/fonts/lv_font_ui_*.c linguist-generated=true -diff

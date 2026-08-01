@@ -1,0 +1,88 @@
+# ---- Target ----------------------------------------------------------------
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---- Flash / partition table ----------------------------------------------
+# Verified against the attached board: 8MB flash, 8MB octal PSRAM (ESP32-S3R8).
+# The 16MB-flash variant of this board also exists — switch to
+# CONFIG_ESPTOOLPY_FLASHSIZE_16MB if yours reports 16MB from `esptool.py flash_id`.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---- PSRAM: 8MB octal ------------------------------------------------------
+# The two 800x480x2 = 750KB RGB frame buffers live here.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+# Deliberately NOT moving code/rodata into PSRAM. Doing so puts every
+# instruction fetch on the same PSRAM bus the LCD DMA is reading the frame
+# buffer from at ~42 MB/s, and starving that DMA is what causes a permanently
+# shifted image. Code runs from the flash cache instead.
+#
+# This costs nothing on the display side: the RGB DMA reads PSRAM directly and
+# does not go through the cache, so scan-out continues normally even while a
+# flash write (an NVS credential save) has the cache disabled.
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=n
+CONFIG_SPIRAM_RODATA=n
+# Keep small allocations in internal RAM so DMA-capable memory stays available.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+
+# ---- Cache: wide lines make PSRAM->LCD DMA reads much more efficient -------
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_32B=y
+
+# ---- RGB LCD ---------------------------------------------------------------
+# Deliberately OFF. This option resets the GDMA channel on *every* VBlank; when
+# that ISR runs even slightly late the LCD has already read the first bytes of
+# the frame, so the restart re-sends them and that frame lands shifted. Doing it
+# unconditionally turns an occasional permanent offset into a constant tremble.
+#
+# Bounce-buffer mode (see lcd_timing.h) is the better answer: the driver then
+# counts DMA EOF events per frame and restarts only when it actually detects an
+# underrun, so a good frame is never disturbed.
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=n
+
+# Keep the GDMA control path out of flash so the bounce-fill ISR is not delayed
+# by a cache miss — ISR latency is exactly what makes bounce buffers run dry.
+CONFIG_GDMA_CTRL_FUNC_IN_IRAM=y
+
+# ---- CPU / RTOS ------------------------------------------------------------
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# ---- TLS: use the bundled root CA store for HTTPS --------------------------
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+# api.open-meteo.com sends a fairly large chain; give mbedTLS room.
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+
+# ---- WiFi ------------------------------------------------------------------
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=24
+CONFIG_ESP_WIFI_TX_BUFFER_TYPE=1
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=24
+
+# ---- LVGL ------------------------------------------------------------------
+CONFIG_LV_COLOR_DEPTH_16=y
+# Route lv_malloc() at the ESP heap so LVGL can spill into PSRAM instead of
+# being boxed into a fixed-size static pool.
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+# The UI draws with its own faces from main/ui/fonts (Montserrat rebuilt with
+# Cyrillic and Latin-1 — see tools/gen_fonts.sh), so the stock ASCII-only ones
+# are dead weight. Keep 14 alone: LVGL needs a built-in for LV_FONT_DEFAULT.
+CONFIG_LV_FONT_MONTSERRAT_14=y
+
+# ---- Logging ---------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y

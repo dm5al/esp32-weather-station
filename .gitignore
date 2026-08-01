@@ -1,0 +1,20 @@
+# ESP-IDF build output
+/build/
+
+# Fetched from dependencies.lock on first build — that lock file IS committed,
+# so anyone cloning gets the same component versions without carrying ~140 MB.
+/managed_components/
+
+# Generated from sdkconfig.defaults. Committing it would silently pin whatever
+# happened to be on one machine and mask later changes to the defaults.
+/sdkconfig
+/sdkconfig.old
+
+# Editors / tooling
+.vscode/
+.idea/
+*.swp
+*~
+__pycache__/
+*.pyc
+node_modules/
