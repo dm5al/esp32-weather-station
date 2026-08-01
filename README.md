@@ -7,7 +7,7 @@ every 15 minutes.
 
 No API keys, no accounts, no cloud service to sign up for.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Unlicense](https://img.shields.io/badge/license-Unlicense-green.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.3%2B-orange)
 
@@ -304,9 +304,14 @@ Two things are worth stating plainly for anyone relying on this:
 
 ## Licence and attribution
 
-Open source under the MIT licence (`SPDX-License-Identifier: MIT`) — see
-[LICENSE](LICENSE). Use it, change it, ship it commercially; just keep the
-notice.
+Released into the **public domain** under the [Unlicense](LICENSE)
+(`SPDX-License-Identifier: Unlicense`). No copyright is claimed and no
+attribution is required — copy it, change it, sell it, do whatever you like.
+
+The dedication covers this project's own source only. The embedded fonts under
+`main/ui/fonts/` are generated from Montserrat and Font Awesome Free and keep
+their SIL Open Font License 1.1 terms; both allow embedding and commercial
+redistribution without imposing their licence on this project.
 
 Services, none of which need an API key:
 
