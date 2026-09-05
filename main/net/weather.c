@@ -21,6 +21,10 @@ static const char *TAG = "weather";
     /* Ask the API for m/s directly rather than converting from its km/h
      * default — one less place for a unit mistake to hide. */                        \
     "&wind_speed_unit=ms"                                                             \
+    /* forecast_hours begins at the current hour rather than at midnight, so the
+     * strip always starts with the hour the operator is standing in. */            \
+    "&hourly=temperature_2m,precipitation_probability,weather_code,is_day"            \
+    "&forecast_hours=%d"                                                              \
     "&timezone=auto&forecast_days=%d"
 
 static float json_num(const cJSON *obj, const char *key, float fallback)
@@ -111,6 +115,28 @@ static esp_err_t parse_forecast(const char *body, weather_data_t *out)
         out->day_count = n;
     }
 
+    /* The hourly block has the same shape as the daily one — parallel arrays
+     * indexed by "time" — so the same accessors serve both. */
+    const cJSON *hourly = cJSON_GetObjectItemCaseSensitive(root, "hourly");
+    if (cJSON_IsObject(hourly)) {
+        const cJSON *times = cJSON_GetObjectItemCaseSensitive(hourly, "time");
+        int n = cJSON_IsArray(times) ? cJSON_GetArraySize(times) : 0;
+        if (n > WEATHER_MAX_HOURS) {
+            n = WEATHER_MAX_HOURS;
+        }
+        for (int i = 0; i < n; i++) {
+            weather_hour_t *h = &out->hours[i];
+            daily_str(hourly, "time", i, h->time, sizeof(h->time));
+            h->temp_c = daily_num(hourly, "temperature_2m", i, 0);
+            h->precip_prob_pct = daily_num(hourly, "precipitation_probability", i, 0);
+            h->code = (int)daily_num(hourly, "weather_code", i, 0);
+            /* is_day comes per hour, so an 02:00 column gets the moon and not
+             * whatever the sky is doing at the moment of the fetch. */
+            h->is_day = daily_num(hourly, "is_day", i, 1) > 0.5f;
+        }
+        out->hour_count = n;
+    }
+
     err = ESP_OK;
 
 done:
@@ -124,7 +150,7 @@ esp_err_t weather_fetch(const geo_location_t *loc, weather_data_t *out)
 
     char url[640];
     int n = snprintf(url, sizeof(url), OPEN_METEO_URL_FMT, loc->latitude, loc->longitude,
-                     WEATHER_MAX_DAYS);
+                     WEATHER_MAX_HOURS, WEATHER_MAX_DAYS);
     ESP_RETURN_ON_FALSE(n > 0 && n < (int)sizeof(url), ESP_ERR_INVALID_SIZE, TAG, "url too long");
 
     char *body = NULL;
@@ -134,8 +160,8 @@ esp_err_t weather_fetch(const geo_location_t *loc, weather_data_t *out)
     free(body);
 
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "%.1f C, code %d, %d forecast days", out->current.temp_c, out->current.code,
-                 out->day_count);
+        ESP_LOGI(TAG, "%.1f C, code %d, %d days, %d hours", out->current.temp_c,
+                 out->current.code, out->day_count, out->hour_count);
     }
     return err;
 }

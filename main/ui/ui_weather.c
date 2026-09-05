@@ -15,21 +15,73 @@ static const char *TAG = "ui.weather";
 
 /* ---- Layout ---------------------------------------------------------------
  * 800x480 with a 12px outer margin:
- *   header    y   0 .. 62   city | clock | link + buttons
- *   current  y  64 .. 260
- *   forecast y 270 .. 466   (7 cards, 104 wide, 8px gutters = 776)
+ *   header   y   0 ..  62   city | clock | link + buttons
+ *   today    y  64 .. 274   conditions, the next 24 hours, and the readings
+ *   forecast y 286 .. 466   (7 cards, 104 wide, 8px gutters = 776)
+ *
+ * Everything about the present day is now one card rather than three.
+ *
+ * The first attempt gave the next 24 hours a strip of its own between the
+ * current conditions and the week, which meant three horizontal bands and two
+ * gutters spent separating things that belong together. Folding the hours into
+ * the same card as the conditions they continue from - and putting the readings
+ * along the bottom of it - buys back the space those borders were using, and
+ * says something truer about the content: this card is today, the row below is
+ * the rest of the week.
  */
 #define MARGIN     12
 #define SCREEN_W   800
 #define CURRENT_Y  64
-#define CURRENT_H  196
-#define FORECAST_Y 270
-#define FORECAST_H 196
+#define CURRENT_H  210
+#define CURRENT_W  (SCREEN_W - 2 * MARGIN)
+
+/*
+ * The week moved down 16 px and lost 16 from its height, ending exactly where
+ * it did before.
+ *
+ * 20 was the intent and 16 is what fits. The card's contents are a fixed chain
+ * with no slack in it: the holiday label wraps to two lines and has to reach the
+ * bottom edge, which pins everything above it, and the icon has to clear the
+ * date. Taking the last 4 px would have meant clipping a holiday name, so the
+ * icon gave up 4 px of its own instead (48 to 44) and the card kept 180.
+ */
+#define FORECAST_Y 286
+#define FORECAST_H 180
 #define CARD_W     104
 #define CARD_GAP   8
-#define HERO_ICON  128
-#define DAY_ICON   48
-#define DAY_ICON_Y 46
+#define HERO_ICON  88
+
+/*
+ * The next 24 hours: eight columns at three-hour steps, four across and two
+ * down in the right half of today's card.
+ *
+ * The API returns every hour and all 24 are kept, but 24 columns is 32 px each
+ * - narrower than the two digits of a temperature. Three-hourly is what a
+ * person plans around, and two rows of four fit beside the conditions where
+ * eight in a row would not.
+ */
+#define HOURLY_SLOTS  8
+#define HOURLY_COLS   4
+#define HOURLY_STEP   3
+#define HOURLY_ICON   24
+#define HOURLY_X      392                                  /* card-relative */
+#define HOURLY_COL_W  ((CURRENT_W - HOURLY_X) / HOURLY_COLS)
+#define HOURLY_ROW_H  68
+#define HOURLY_Y0     6
+
+/*
+ * The readings, in one row along the bottom of the same card.
+ *
+ * Six of them, each a name over its value. They used to be two rows of three
+ * stacked beside the temperature, which put them in competition with it for the
+ * eye; along the bottom they read as what they are - the detail you look at
+ * second.
+ */
+#define STATS_Y       150
+#define STAT_COL_W    (CURRENT_W / STAT_COUNT)
+
+#define DAY_ICON   44
+#define DAY_ICON_Y 44
 
 /* Right-hand edge of the text block, left of the two header buttons. */
 #define HEADER_TEXT_RIGHT 150
@@ -54,9 +106,14 @@ static lv_obj_t *s_current_card;
 static lv_obj_t *s_icon; /* rebuilt on every update — it is a tree of shapes */
 static lv_obj_t *s_temp;
 static lv_obj_t *s_condition;
-static lv_obj_t *s_feels;
 static lv_obj_t *s_stat_name[STAT_COUNT];
 static lv_obj_t *s_stat_value[STAT_COUNT];
+
+static lv_obj_t *s_hour_card;
+static lv_obj_t *s_hour_time[HOURLY_SLOTS];
+static lv_obj_t *s_hour_icon[HOURLY_SLOTS];
+static lv_obj_t *s_hour_temp[HOURLY_SLOTS];
+static lv_obj_t *s_hour_precip[HOURLY_SLOTS];
 
 static lv_obj_t *s_day_card[WEATHER_MAX_DAYS];
 static lv_obj_t *s_day_name[WEATHER_MAX_DAYS];
@@ -233,18 +290,64 @@ static void build_current_card(void)
     lv_obj_set_pos(s_current_card, MARGIN, CURRENT_Y);
 
     s_icon = weather_icon_create(s_current_card, WICON_CLOUD, HERO_ICON, true);
-    lv_obj_set_pos(s_icon, 24, 34);
+    lv_obj_set_pos(s_icon, 24, 18);
 
-    s_temp = make_label(s_current_card, &lv_font_ui_48, UI_COL_TEXT, 180, 34, "--°");
-    s_condition = make_label(s_current_card, &lv_font_ui_24, UI_COL_ACCENT, 180, 98, "--");
-    s_feels = make_label(s_current_card, &lv_font_ui_16, UI_COL_MUTED, 180, 134, "");
+    s_temp = make_label(s_current_card, &lv_font_ui_48, UI_COL_TEXT, 120, 12, "--°");
+    s_condition = make_label(s_current_card, &lv_font_ui_24, UI_COL_ACCENT, 120, 72, "--");
+    /* "Feels like" is one of the six readings along the bottom now, so the
+     * standalone line that used to sit here is gone: it would have said the
+     * same thing twice in one card. */
 
-    /* Two rows of three stats filling the right half of the card. */
+    /* One row of six along the bottom: name over value, evenly spaced. */
     for (int i = 0; i < STAT_COUNT; i++) {
-        int x = 412 + (i % 3) * 122;
-        int y = 34 + (i / 3) * 72;
-        s_stat_name[i] = make_label(s_current_card, &lv_font_ui_12, UI_COL_MUTED, x, y, "");
-        s_stat_value[i] = make_label(s_current_card, &lv_font_ui_18, UI_COL_TEXT, x, y + 20, "--");
+        int x = i * STAT_COL_W;
+        s_stat_name[i] = make_label(s_current_card, &lv_font_ui_12, UI_COL_MUTED, x, STATS_Y, "");
+        s_stat_value[i] =
+            make_label(s_current_card, &lv_font_ui_18, UI_COL_TEXT, x, STATS_Y + 20, "--");
+
+        /* Centred in their column so the six read as a row rather than as six
+         * left-aligned fragments of different lengths. */
+        lv_obj_t *centred[] = {s_stat_name[i], s_stat_value[i]};
+        for (size_t k = 0; k < sizeof(centred) / sizeof(centred[0]); k++) {
+            lv_obj_set_width(centred[k], STAT_COL_W);
+            lv_obj_set_style_text_align(centred[k], LV_TEXT_ALIGN_CENTER, 0);
+        }
+    }
+}
+
+/*
+ * The next 24 hours, as one card of eight columns.
+ *
+ * One card rather than eight, because eight separate cards at this height would
+ * be mostly border. The columns are marked out by their contents alone, which is
+ * enough when every one has the same three lines in the same places.
+ */
+static void build_hourly(void)
+{
+    /* No card of its own: these live in the right half of today's card, so the
+     * hours read as a continuation of the conditions beside them. */
+    s_hour_card = s_current_card;
+
+    for (int i = 0; i < HOURLY_SLOTS; i++) {
+        const int x = HOURLY_X + (i % HOURLY_COLS) * HOURLY_COL_W;
+        const int y = HOURLY_Y0 + (i / HOURLY_COLS) * HOURLY_ROW_H;
+
+        s_hour_time[i] = make_label(s_hour_card, &lv_font_ui_12, UI_COL_MUTED, x, y, "--:--");
+        s_hour_temp[i] = make_label(s_hour_card, &lv_font_ui_16, UI_COL_TEXT, x, y + 42, "--°");
+        /* Empty below the threshold, so a dry day shows nothing rather than a
+         * grid of zeroes. */
+        s_hour_precip[i] =
+            make_label(s_hour_card, &lv_font_ui_12, UI_COL_COOL, x + HOURLY_COL_W / 2 + 14,
+                       y + 44, "");
+
+        lv_obj_t *centred[] = {s_hour_time[i], s_hour_temp[i]};
+        for (size_t k = 0; k < sizeof(centred) / sizeof(centred[0]); k++) {
+            lv_obj_set_width(centred[k], HOURLY_COL_W);
+            lv_obj_set_style_text_align(centred[k], LV_TEXT_ALIGN_CENTER, 0);
+        }
+
+        s_hour_icon[i] = weather_icon_create(s_hour_card, WICON_CLOUD, HOURLY_ICON, false);
+        lv_obj_set_pos(s_hour_icon[i], x + (HOURLY_COL_W - HOURLY_ICON) / 2, y + 16);
     }
 }
 
@@ -268,15 +371,15 @@ static void build_forecast(void)
         lv_obj_clear_flag(s_day_bar[i], LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_flag(s_day_bar[i], LV_OBJ_FLAG_HIDDEN);
 
-        s_day_name[i] = make_label(card, &lv_font_ui_18, UI_COL_TEXT, 0, 10, "--");
-        s_day_date[i] = make_label(card, &lv_font_ui_12, UI_COL_MUTED, 0, 31, "");
-        s_day_max[i] = make_label(card, &lv_font_ui_20, UI_COL_TEXT, 0, 100, "--°");
-        s_day_min[i] = make_label(card, &lv_font_ui_16, UI_COL_MUTED, 0, 124, "--°");
-        s_day_precip[i] = make_label(card, &lv_font_ui_14, UI_COL_COOL, 0, 146, "");
+        s_day_name[i] = make_label(card, &lv_font_ui_18, UI_COL_TEXT, 0, 2, "--");
+        s_day_date[i] = make_label(card, &lv_font_ui_12, UI_COL_MUTED, 0, 24, "");
+        s_day_max[i] = make_label(card, &lv_font_ui_20, UI_COL_TEXT, 0, 90, "--°");
+        s_day_min[i] = make_label(card, &lv_font_ui_16, UI_COL_MUTED, 0, 114, "--°");
+        s_day_precip[i] = make_label(card, &lv_font_ui_14, UI_COL_COOL, 0, 132, "");
 
         /* Holiday names run long ("Christi Himmelfahrt"), so this one wraps
          * across the two lines left at the bottom of the card. */
-        s_day_holiday[i] = make_label(card, &lv_font_ui_12, UI_COL_WARM, 0, 166, "");
+        s_day_holiday[i] = make_label(card, &lv_font_ui_12, UI_COL_WARM, 0, 150, "");
         lv_label_set_long_mode(s_day_holiday[i], LV_LABEL_LONG_WRAP);
 
         lv_obj_t *centred[] = {s_day_name[i], s_day_date[i], s_day_max[i], s_day_min[i],
@@ -286,7 +389,7 @@ static void build_forecast(void)
             lv_obj_set_style_text_align(centred[k], LV_TEXT_ALIGN_CENTER, 0);
         }
         lv_obj_set_width(s_day_holiday[i], CARD_W - 8);
-        lv_obj_set_pos(s_day_holiday[i], 4, 166);
+        lv_obj_set_pos(s_day_holiday[i], 4, 150);
 
         /* Static: seven animated icons would keep most of the screen
          * invalidating, and that redraw traffic competes with the LCD DMA. */
@@ -304,6 +407,7 @@ lv_obj_t *ui_weather_create(void)
 
     build_header();
     build_current_card();
+    build_hourly();
     build_forecast();
 
     lv_timer_create(clock_timer_cb, 1000, NULL);
@@ -338,11 +442,10 @@ static void render(void)
     lv_obj_delete(s_icon);
     s_icon = weather_icon_create(s_current_card, weather_code_icon(c->code, c->is_day), HERO_ICON,
                                  true);
-    lv_obj_set_pos(s_icon, 24, 34);
+    lv_obj_set_pos(s_icon, 24, 18);
 
     lv_label_set_text_fmt(s_temp, "%d°", (int)lroundf(c->temp_c));
     lv_label_set_text(s_condition, T(i18n_wmo_string(c->code)));
-    lv_label_set_text_fmt(s_feels, T(STR_FEELS_LIKE_FMT), (int)lroundf(c->feels_c));
 
     lv_label_set_text_fmt(s_stat_value[0], "%d°C", (int)lroundf(c->feels_c));
     lv_label_set_text_fmt(s_stat_value[1], "%d %%", (int)lroundf(c->humidity_pct));
@@ -362,6 +465,50 @@ static void render(void)
 
     char hhmm[8];
     lv_label_set_text_fmt(s_updated, T(STR_UPDATED), time_of_day(c->time, hhmm, sizeof(hhmm)));
+
+    /*
+     * The next 24 hours, in the right half of this same card.
+     *
+     * Each slot is cleared individually rather than hiding a container: the
+     * container is now today's card, and hiding it would take the temperature
+     * and the readings with it. An hour with no data shows nothing at all —
+     * dashes would suggest a flat forecast rather than an absent one.
+     */
+    for (int i = 0; i < HOURLY_SLOTS; i++) {
+        const int idx = i * HOURLY_STEP;
+        const bool have = idx < s_data.hour_count;
+        const weather_hour_t *h = have ? &s_data.hours[idx] : NULL;
+
+        if (!have) {
+            lv_label_set_text(s_hour_time[i], "");
+            lv_label_set_text(s_hour_temp[i], "");
+            lv_label_set_text(s_hour_precip[i], "");
+            lv_obj_add_flag(s_hour_icon[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        char buf[8];
+        lv_label_set_text(s_hour_time[i], time_of_day(h->time, buf, sizeof(buf)));
+        lv_label_set_text_fmt(s_hour_temp[i], "%d°", (int)lroundf(h->temp_c));
+
+        /* Below a coin toss the number says little and the slot is quieter
+         * without it. */
+        if (h->precip_prob_pct >= 50.0f) {
+            lv_label_set_text_fmt(s_hour_precip[i], "%d%%", (int)lroundf(h->precip_prob_pct));
+        } else {
+            lv_label_set_text(s_hour_precip[i], "");
+        }
+
+        /* Rebuilt like the day icons: the icon is a tree of shapes, so the
+         * family cannot be changed in place. */
+        lv_obj_delete(s_hour_icon[i]);
+        s_hour_icon[i] = weather_icon_create(s_hour_card, weather_code_icon(h->code, h->is_day),
+                                             HOURLY_ICON, false);
+        lv_obj_set_pos(s_hour_icon[i],
+                       HOURLY_X + (i % HOURLY_COLS) * HOURLY_COL_W +
+                           (HOURLY_COL_W - HOURLY_ICON) / 2,
+                       HOURLY_Y0 + (i / HOURLY_COLS) * HOURLY_ROW_H + 16);
+    }
 
     for (int i = 0; i < WEATHER_MAX_DAYS; i++) {
         if (i >= s_data.day_count) {

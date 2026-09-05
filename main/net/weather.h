@@ -11,6 +11,17 @@ extern "C" {
 
 #define WEATHER_MAX_DAYS 7
 
+/*
+ * Hours kept for the next-24-hours strip.
+ *
+ * Open-Meteo's hourly series is on exact hour boundaries and forecast_hours=24
+ * starts at the current hour, so this is one full day forward with no gaps and
+ * no interpolation. Finer resolution exists - the API also serves a 15-minute
+ * series - but a quarter-hour temperature is noise on a wall display, and 96
+ * columns will not fit across 800 px however small the font gets.
+ */
+#define WEATHER_MAX_HOURS 24
+
 /** @brief Visual family a WMO weather code belongs to. */
 typedef enum {
     WICON_SUN,
@@ -39,6 +50,14 @@ typedef struct {
 } weather_current_t;
 
 typedef struct {
+    char time[20]; /* local ISO8601, "2026-09-05T17:00" */
+    float temp_c;
+    float precip_prob_pct;
+    int code;    /* WMO weather interpretation code */
+    bool is_day; /* the API reports this per hour, so night icons stay right */
+} weather_hour_t;
+
+typedef struct {
     char date[12]; /* "2026-07-31" */
     int code;
     float tmax_c;
@@ -53,12 +72,14 @@ typedef struct {
     weather_current_t current;
     weather_day_t days[WEATHER_MAX_DAYS];
     int day_count;
+    weather_hour_t hours[WEATHER_MAX_HOURS];
+    int hour_count;
     int utc_offset_seconds;
     char timezone_abbr[12];
 } weather_data_t;
 
 /**
- * @brief Fetch current conditions plus a 7-day forecast from Open-Meteo.
+ * @brief Fetch current conditions, the next 24 hours and a 7-day forecast.
  *
  * Open-Meteo needs no API key. Times come back already converted to the
  * location's local zone (timezone=auto), so nothing here has to do TZ maths.
