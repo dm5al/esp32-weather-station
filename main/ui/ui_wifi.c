@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bsp/board.h"
 #include "esp_log.h"
 #include "ui/fonts/ui_fonts.h"
 #include "ui/i18n.h"
@@ -114,7 +115,7 @@ static void open_password_modal(const char *ssid)
     lv_obj_t *card = lv_obj_create(s_modal);
     ui_style_card(card);
     lv_obj_set_size(card, 700, 200);
-    lv_obj_set_pos(card, (800 - 700) / 2, 16);
+    lv_obj_set_pos(card, (BSP_LCD_H_RES - 700) / 2, 16);
 
     lv_obj_t *title = lv_label_create(card);
     lv_obj_set_style_text_font(title, &lv_font_ui_20, 0);
@@ -146,7 +147,7 @@ static void open_password_modal(const char *ssid)
     lv_obj_add_event_cb(connect, on_connect_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *kb = lv_keyboard_create(s_modal);
-    lv_obj_set_size(kb, 800, 244);
+    lv_obj_set_size(kb, BSP_LCD_H_RES, 244);
     /* lv_keyboard's constructor aligns itself BOTTOM_MID, so lv_obj_set_pos()
      * here would be an offset from the bottom edge and push it off-screen.
      * Align explicitly instead. */

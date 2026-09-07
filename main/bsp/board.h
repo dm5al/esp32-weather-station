@@ -18,8 +18,17 @@
 extern "C" {
 #endif
 
+/*
+ * The panel this board carries. Overridable so the Linux port can build the
+ * same interface for whatever is on the HDMI socket - it passes the monitor's
+ * size in from CMake. On the ESP32 these are fixed by the hardware.
+ */
+#ifndef BSP_LCD_H_RES
 #define BSP_LCD_H_RES 800
+#endif
+#ifndef BSP_LCD_V_RES
 #define BSP_LCD_V_RES 480
+#endif
 
 /**
  * @brief Bring up expander, RGB panel, GT911 touch and LVGL.

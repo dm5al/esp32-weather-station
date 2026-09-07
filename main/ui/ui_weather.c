@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "bsp/board.h" /* BSP_LCD_H_RES / BSP_LCD_V_RES: the layout is sized from them */
 #include "esp_log.h"
 #include "net/holidays.h"
 #include "ui/fonts/ui_fonts.h"
@@ -14,42 +15,67 @@
 static const char *TAG = "ui.weather";
 
 /* ---- Layout ---------------------------------------------------------------
- * 800x480 with a 12px outer margin:
- *   header   y   0 ..  62   city | clock | link + buttons
- *   today    y  64 .. 274   conditions, the next 24 hours, and the readings
- *   forecast y 286 .. 466   (7 cards, 104 wide, 8px gutters = 776)
+ * A 12 px outer margin, and three bands down the screen:
+ *   header    city | clock | link + buttons
+ *   today     conditions, the next 24 hours, and the readings
+ *   forecast  seven day cards with 8 px gutters
  *
- * Everything about the present day is now one card rather than three.
+ * At 800x480 that is header 0..62, today 64..274, forecast 286..466 with 104 px
+ * cards - the sizes this was tuned at on the panel.
  *
- * The first attempt gave the next 24 hours a strip of its own between the
- * current conditions and the week, which meant three horizontal bands and two
- * gutters spent separating things that belong together. Folding the hours into
- * the same card as the conditions they continue from - and putting the readings
- * along the bottom of it - buys back the space those borders were using, and
- * says something truer about the content: this card is today, the row below is
- * the rest of the week.
+ * Everything about the present day is one card rather than three. The first
+ * attempt gave the next 24 hours a strip of its own between the current
+ * conditions and the week, which meant three horizontal bands and two gutters
+ * spent separating things that belong together. Folding the hours into the same
+ * card as the conditions they continue from - and putting the readings along the
+ * bottom of it - buys back the space those borders were using, and says
+ * something truer about the content: this card is today, the row below is the
+ * rest of the week.
+ *
+ * Sized from the panel rather than from the number 800.
+ *
+ * Written for an 800x480 board and then asked to run on a 1024x600 HDMI
+ * monitor, where an absolute layout would have sat in the top-left corner with
+ * a third of the screen unused. Everything below is therefore derived from
+ * BSP_LCD_H_RES and BSP_LCD_V_RES.
+ *
+ * The arithmetic is arranged so that at 800x480 every value comes out exactly
+ * what it was when it was tuned by hand on the panel. That is deliberate: the
+ * point of deriving these is to gain a second size, not to re-litigate the
+ * first. A wider screen widens the cards and their columns; a taller one gives
+ * the extra height to the two cards in the same proportion they already had.
  */
 #define MARGIN     12
-#define SCREEN_W   800
-#define CURRENT_Y  64
-#define CURRENT_H  210
+#define SCREEN_W   BSP_LCD_H_RES
+#define SCREEN_H   BSP_LCD_V_RES
+#define HEADER_H   64
+
+#define CURRENT_Y  HEADER_H
 #define CURRENT_W  (SCREEN_W - 2 * MARGIN)
 
+/* Vertical space below the header, less the outer margin and the gutter between
+ * the two cards. At 480 this is 392, split 210/182 - which is what the hand
+ * tuning arrived at, to within the two pixels rounding costs. */
+#define BODY_H     (SCREEN_H - HEADER_H - MARGIN - CARD_GAP_V)
+#define CARD_GAP_V 12
+#define CURRENT_H  ((BODY_H * 210) / 392)
+
 /*
- * The week moved down 16 px and lost 16 from its height, ending exactly where
- * it did before.
+ * The week takes whatever is left below today's card.
  *
- * 20 was the intent and 16 is what fits. The card's contents are a fixed chain
- * with no slack in it: the holiday label wraps to two lines and has to reach the
- * bottom edge, which pins everything above it, and the icon has to clear the
- * date. Taking the last 4 px would have meant clipping a holiday name, so the
- * icon gave up 4 px of its own instead (48 to 44) and the card kept 180.
+ * Its contents are a chain with no slack: the holiday label wraps to two lines
+ * and has to reach the bottom edge, which pins everything above it, and the icon
+ * has to clear the date. That is why the day icon is 44 px and not the 48 it
+ * started at - those 4 px are what let the icon sit clear of the date without a
+ * name like "Christi Himmelfahrt" being clipped. All of it scales with the card,
+ * so a taller screen relieves the squeeze rather than inheriting it.
  */
-#define FORECAST_Y 286
-#define FORECAST_H 180
-#define CARD_W     104
+#define FORECAST_Y (CURRENT_Y + CURRENT_H + CARD_GAP_V)
+#define FORECAST_H (SCREEN_H - MARGIN - FORECAST_Y)
 #define CARD_GAP   8
-#define HERO_ICON  88
+/* Seven cards and six gutters filling the width. 104 at 800 wide. */
+#define CARD_W     ((CURRENT_W - (WEATHER_MAX_DAYS - 1) * CARD_GAP) / WEATHER_MAX_DAYS)
+#define HERO_ICON  CUR_V(88)
 
 /*
  * The next 24 hours: eight columns at three-hour steps, four across and two
@@ -60,14 +86,23 @@ static const char *TAG = "ui.weather";
  * person plans around, and two rows of four fit beside the conditions where
  * eight in a row would not.
  */
+/*
+ * Vertical positions inside a card scale with that card; horizontal ones inside
+ * today's card scale with its width. At the size everything was tuned at these
+ * are the identity, so the 800x480 firmware is unchanged to the pixel.
+ */
+#define CUR_V(v) ((v) * CURRENT_H / 210)
+#define CUR_X(v) ((v) * CURRENT_W / 776)
+#define FC_V(v)  ((v) * FORECAST_H / 180)
+
 #define HOURLY_SLOTS  8
 #define HOURLY_COLS   4
 #define HOURLY_STEP   3
-#define HOURLY_ICON   24
-#define HOURLY_X      392                                  /* card-relative */
+#define HOURLY_ICON   CUR_V(24)
+#define HOURLY_X      CUR_X(392)                           /* card-relative */
 #define HOURLY_COL_W  ((CURRENT_W - HOURLY_X) / HOURLY_COLS)
-#define HOURLY_ROW_H  68
-#define HOURLY_Y0     6
+#define HOURLY_ROW_H  CUR_V(68)
+#define HOURLY_Y0     CUR_V(6)
 
 /*
  * The readings, in one row along the bottom of the same card.
@@ -77,14 +112,15 @@ static const char *TAG = "ui.weather";
  * eye; along the bottom they read as what they are - the detail you look at
  * second.
  */
-#define STATS_Y       150
+#define STATS_Y       CUR_V(150)
 #define STAT_COL_W    (CURRENT_W / STAT_COUNT)
 
-#define DAY_ICON   44
-#define DAY_ICON_Y 44
+#define DAY_ICON   FC_V(44)
+#define DAY_ICON_Y FC_V(44)
 
 /* Right-hand edge of the text block, left of the two header buttons. */
 #define HEADER_TEXT_RIGHT 150
+#define HEADER_BTN_W      52
 
 #define STAT_COUNT 6
 
@@ -278,8 +314,11 @@ static void build_header(void)
     lv_label_set_text(s_updated, "");
     lv_obj_align(s_updated, LV_ALIGN_TOP_RIGHT, -HEADER_TEXT_RIGHT, 34);
 
-    s_refresh_btn = make_icon_button(s_scr, LV_SYMBOL_REFRESH, 664, 10, on_refresh_clicked);
-    make_icon_button(s_scr, LV_SYMBOL_SETTINGS, 724, 10, on_settings_clicked);
+    /* Anchored to the right edge rather than to 800. */
+    const int settings_x = SCREEN_W - MARGIN - 12 - HEADER_BTN_W;
+    s_refresh_btn =
+        make_icon_button(s_scr, LV_SYMBOL_REFRESH, settings_x - 60, 10, on_refresh_clicked);
+    make_icon_button(s_scr, LV_SYMBOL_SETTINGS, settings_x, 10, on_settings_clicked);
 }
 
 static void build_current_card(void)
@@ -290,10 +329,10 @@ static void build_current_card(void)
     lv_obj_set_pos(s_current_card, MARGIN, CURRENT_Y);
 
     s_icon = weather_icon_create(s_current_card, WICON_CLOUD, HERO_ICON, true);
-    lv_obj_set_pos(s_icon, 24, 18);
+    lv_obj_set_pos(s_icon, CUR_X(24), CUR_V(18));
 
-    s_temp = make_label(s_current_card, &lv_font_ui_48, UI_COL_TEXT, 120, 12, "--°");
-    s_condition = make_label(s_current_card, &lv_font_ui_24, UI_COL_ACCENT, 120, 72, "--");
+    s_temp = make_label(s_current_card, &lv_font_ui_48, UI_COL_TEXT, CUR_X(120), CUR_V(12), "--°");
+    s_condition = make_label(s_current_card, &lv_font_ui_24, UI_COL_ACCENT, CUR_X(120), CUR_V(72), "--");
     /* "Feels like" is one of the six readings along the bottom now, so the
      * standalone line that used to sit here is gone: it would have said the
      * same thing twice in one card. */
@@ -303,7 +342,7 @@ static void build_current_card(void)
         int x = i * STAT_COL_W;
         s_stat_name[i] = make_label(s_current_card, &lv_font_ui_12, UI_COL_MUTED, x, STATS_Y, "");
         s_stat_value[i] =
-            make_label(s_current_card, &lv_font_ui_18, UI_COL_TEXT, x, STATS_Y + 20, "--");
+            make_label(s_current_card, &lv_font_ui_18, UI_COL_TEXT, x, STATS_Y + CUR_V(20), "--");
 
         /* Centred in their column so the six read as a row rather than as six
          * left-aligned fragments of different lengths. */
@@ -333,12 +372,12 @@ static void build_hourly(void)
         const int y = HOURLY_Y0 + (i / HOURLY_COLS) * HOURLY_ROW_H;
 
         s_hour_time[i] = make_label(s_hour_card, &lv_font_ui_12, UI_COL_MUTED, x, y, "--:--");
-        s_hour_temp[i] = make_label(s_hour_card, &lv_font_ui_16, UI_COL_TEXT, x, y + 42, "--°");
+        s_hour_temp[i] = make_label(s_hour_card, &lv_font_ui_16, UI_COL_TEXT, x, y + CUR_V(42), "--°");
         /* Empty below the threshold, so a dry day shows nothing rather than a
          * grid of zeroes. */
         s_hour_precip[i] =
-            make_label(s_hour_card, &lv_font_ui_12, UI_COL_COOL, x + HOURLY_COL_W / 2 + 14,
-                       y + 44, "");
+            make_label(s_hour_card, &lv_font_ui_12, UI_COL_COOL,
+                       x + HOURLY_COL_W / 2 + CUR_X(14), y + CUR_V(44), "");
 
         lv_obj_t *centred[] = {s_hour_time[i], s_hour_temp[i]};
         for (size_t k = 0; k < sizeof(centred) / sizeof(centred[0]); k++) {
@@ -347,7 +386,7 @@ static void build_hourly(void)
         }
 
         s_hour_icon[i] = weather_icon_create(s_hour_card, WICON_CLOUD, HOURLY_ICON, false);
-        lv_obj_set_pos(s_hour_icon[i], x + (HOURLY_COL_W - HOURLY_ICON) / 2, y + 16);
+        lv_obj_set_pos(s_hour_icon[i], x + (HOURLY_COL_W - HOURLY_ICON) / 2, y + CUR_V(16));
     }
 }
 
@@ -371,15 +410,15 @@ static void build_forecast(void)
         lv_obj_clear_flag(s_day_bar[i], LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_flag(s_day_bar[i], LV_OBJ_FLAG_HIDDEN);
 
-        s_day_name[i] = make_label(card, &lv_font_ui_18, UI_COL_TEXT, 0, 2, "--");
-        s_day_date[i] = make_label(card, &lv_font_ui_12, UI_COL_MUTED, 0, 24, "");
-        s_day_max[i] = make_label(card, &lv_font_ui_20, UI_COL_TEXT, 0, 90, "--°");
-        s_day_min[i] = make_label(card, &lv_font_ui_16, UI_COL_MUTED, 0, 114, "--°");
-        s_day_precip[i] = make_label(card, &lv_font_ui_14, UI_COL_COOL, 0, 132, "");
+        s_day_name[i] = make_label(card, &lv_font_ui_18, UI_COL_TEXT, 0, FC_V(2), "--");
+        s_day_date[i] = make_label(card, &lv_font_ui_12, UI_COL_MUTED, 0, FC_V(24), "");
+        s_day_max[i] = make_label(card, &lv_font_ui_20, UI_COL_TEXT, 0, FC_V(90), "--°");
+        s_day_min[i] = make_label(card, &lv_font_ui_16, UI_COL_MUTED, 0, FC_V(114), "--°");
+        s_day_precip[i] = make_label(card, &lv_font_ui_14, UI_COL_COOL, 0, FC_V(132), "");
 
         /* Holiday names run long ("Christi Himmelfahrt"), so this one wraps
          * across the two lines left at the bottom of the card. */
-        s_day_holiday[i] = make_label(card, &lv_font_ui_12, UI_COL_WARM, 0, 150, "");
+        s_day_holiday[i] = make_label(card, &lv_font_ui_12, UI_COL_WARM, 0, FC_V(150), "");
         lv_label_set_long_mode(s_day_holiday[i], LV_LABEL_LONG_WRAP);
 
         lv_obj_t *centred[] = {s_day_name[i], s_day_date[i], s_day_max[i], s_day_min[i],
@@ -389,7 +428,7 @@ static void build_forecast(void)
             lv_obj_set_style_text_align(centred[k], LV_TEXT_ALIGN_CENTER, 0);
         }
         lv_obj_set_width(s_day_holiday[i], CARD_W - 8);
-        lv_obj_set_pos(s_day_holiday[i], 4, 150);
+        lv_obj_set_pos(s_day_holiday[i], 4, FC_V(150));
 
         /* Static: seven animated icons would keep most of the screen
          * invalidating, and that redraw traffic competes with the LCD DMA. */
@@ -507,7 +546,7 @@ static void render(void)
         lv_obj_set_pos(s_hour_icon[i],
                        HOURLY_X + (i % HOURLY_COLS) * HOURLY_COL_W +
                            (HOURLY_COL_W - HOURLY_ICON) / 2,
-                       HOURLY_Y0 + (i / HOURLY_COLS) * HOURLY_ROW_H + 16);
+                       HOURLY_Y0 + (i / HOURLY_COLS) * HOURLY_ROW_H + CUR_V(16));
     }
 
     for (int i = 0; i < WEATHER_MAX_DAYS; i++) {

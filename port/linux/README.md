@@ -78,26 +78,33 @@ There is deliberately no input by default. An HDMI monitor usually has no touch
 panel, and the weather screen is a display rather than a control surface — the
 settings and Wi-Fi screens are the only places a pointer is needed.
 
-## The screen size question
+## Screen size
 
-**The interface is drawn at a fixed 800×480 and does not reflow.** Positions are
-absolute pixel coordinates throughout `ui_weather.c`. On a larger monitor the
-layout sits in the top-left corner; on a smaller one it is clipped. The program
-says so at startup rather than leaving it to be worked out.
+**Defaults to 1024×600.** The layout is derived from the display size rather
+than written in absolute coordinates, so it fills the panel: the cards and their
+columns widen with the screen, and the extra height is shared between today's
+card and the week in the proportion they already had.
 
-Pin the HDMI mode in `/boot/firmware/config.txt`:
+For a different panel:
 
-```
-hdmi_group=2
-hdmi_mode=87
-hdmi_cvt=800 480 60 6 0 0 0
-hdmi_force_hotplug=1
+```bash
+cmake -B build -DDISPLAY_W=1280 -DDISPLAY_H=800
 ```
 
-Reboot afterwards. Not every monitor accepts 800×480 — many will letterbox it or
-refuse — so a display that does is worth choosing deliberately. Making the
-layout resolution-independent is the obvious future work and is a real job: it
-means replacing every absolute coordinate with a layout.
+It has to be told, rather than discovered: LVGL only reports the mode once the
+display is open, which is after the interface has been laid out. If the two
+disagree the program says so at startup and carries on, so a wrong `DISPLAY_W`
+shows up as a warning in the log and a picture that does not quite fill the
+screen, not as a puzzle.
+
+**Fonts do not scale.** They are compiled-in bitmaps at fixed sizes, so a much
+larger screen gets more whitespace rather than larger text. Up to about 1280
+wide that reads as generous; past it, the font set wants a second size — which
+is a job for the font generator, not the layout.
+
+The ESP32 firmware is unaffected by any of this: `bsp/board.h` still fixes it at
+800×480, and the arithmetic is arranged so every derived value comes out exactly
+what it was when the layout was tuned by hand on that panel.
 
 ## Wi-Fi
 
@@ -145,8 +152,9 @@ whether stderr is a terminal before colouring anything.
 ## Known gaps
 
 - **Not yet run on hardware.** Expect bring-up problems, most likely in DRM
-  setup and in the pinned HDMI mode.
-- **Fixed 800×480**, as above.
+  setup.
+- The layout adapts to the display size, but the fonts do not: a much larger
+  screen gets more whitespace rather than larger text.
 - **No serial console.** The ESP32 build has a REPL for tuning panel timings and
   polling the touch controller; neither applies here, and a Pi already has a
   shell.

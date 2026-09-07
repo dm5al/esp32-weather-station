@@ -30,6 +30,19 @@ set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 set(BSP_BACKEND "DRM" CACHE STRING "Display backend: DRM, FBDEV or SDL")
 set_property(CACHE BSP_BACKEND PROPERTY STRINGS DRM FBDEV SDL)
 
+# ---- display size -----------------------------------------------------------
+#
+# The interface is laid out from these rather than from fixed coordinates, so it
+# fills whatever is attached instead of sitting in a corner of it. 1024x600 is
+# the default because that is the panel this port was written for; the ESP32
+# firmware keeps its own 800x480 from bsp/board.h.
+#
+# Fonts do not scale with this - a much larger screen gets more whitespace, not
+# larger text. Somewhere past about 1280 wide that will start to look sparse and
+# the font set would want a second size rather than the layout another tweak.
+set(DISPLAY_W "1024" CACHE STRING "Display width in pixels")
+set(DISPLAY_H "600"  CACHE STRING "Display height in pixels")
+
 # ---- LVGL -------------------------------------------------------------------
 #
 # Pinned to the same 9.2 the firmware uses through the component manager. A
@@ -92,7 +105,11 @@ target_include_directories(esp32-weather PRIVATE
     ${PROJECT_ROOT}/main
 )
 
-target_compile_definitions(esp32-weather PRIVATE BSP_BACKEND_${BSP_BACKEND})
+target_compile_definitions(esp32-weather PRIVATE
+    BSP_BACKEND_${BSP_BACKEND}
+    BSP_LCD_H_RES=${DISPLAY_W}
+    BSP_LCD_V_RES=${DISPLAY_H}
+)
 
 # -Wall and -Wextra, but not -Werror: this has to build on whatever gcc the
 # owner's Raspberry Pi OS image happens to ship, and a new compiler's new
