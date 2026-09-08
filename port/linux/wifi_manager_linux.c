@@ -126,7 +126,9 @@ static bool find_iface(void)
         while (*name == ' ') {
             name++;
         }
-        snprintf(s_iface, sizeof(s_iface), "%s", name);
+        /* Bounded explicitly: the line came from a file, and an interface
+         * name longer than the field means it is not one. */
+        snprintf(s_iface, sizeof(s_iface), "%.*s", (int)(sizeof(s_iface) - 1), name);
         break;
     }
     fclose(f);

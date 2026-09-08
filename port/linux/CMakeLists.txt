@@ -138,6 +138,10 @@ target_include_directories(esp32-weather PRIVATE
 )
 
 target_compile_definitions(esp32-weather PRIVATE
+    # pthread_setname_np and friends are GNU extensions, and -std=gnu11 alone
+    # does not expose them. Absent, they compile as implicit declarations and
+    # fail on any compiler that treats that as the error it now is.
+    _GNU_SOURCE
     BSP_BACKEND_${BSP_BACKEND}
     BSP_LCD_H_RES=${DISPLAY_W}
     BSP_LCD_V_RES=${DISPLAY_H}
