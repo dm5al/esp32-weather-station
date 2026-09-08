@@ -70,6 +70,10 @@ FetchContent_Declare(
 # file nobody had ever named. LV_CONF_INCLUDE_SIMPLE makes LVGL include
 # "lv_conf.h" plainly and find ours on the include path, where no expansion can
 # happen.
+# Cleared rather than merely left unset: an earlier version of this file wrote
+# LV_CONF_PATH into the cache, and a build tree configured by it keeps handing
+# the poisoned value to LVGL no matter what this file says now.
+unset(LV_CONF_PATH CACHE)
 set(LV_CONF_INCLUDE_SIMPLE ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
