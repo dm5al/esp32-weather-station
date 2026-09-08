@@ -50,12 +50,27 @@
 #define LV_DRAW_BUF_ALIGN 4
 
 /* ---- display backends ---------------------------------------------------- */
-/* All three are compiled in; bsp_linux.c picks one with BSP_BACKEND_*. Building
- * the unused ones costs a few kilobytes and avoids a second place to edit when
- * the backend changes. */
-#define LV_USE_LINUX_DRM   1
-#define LV_USE_LINUX_FBDEV 1
-#define LV_USE_SDL         1
+/*
+ * Exactly one, chosen by CMake, which defines it to 1 for both this build and
+ * LVGL's.
+ *
+ * All three used to be enabled here on the reasoning that the unused ones cost
+ * only a few kilobytes. They cost more than that: LVGL compiles the driver for
+ * every backend that is on, so enabling SDL made the build require SDL2 headers
+ * on a machine that had no reason to have them, and it failed on a library
+ * nobody had asked for.
+ */
+#ifndef LV_USE_LINUX_DRM
+#define LV_USE_LINUX_DRM 0
+#endif
+#ifndef LV_USE_LINUX_FBDEV
+#define LV_USE_LINUX_FBDEV 0
+#endif
+#ifndef LV_USE_SDL
+#define LV_USE_SDL 0
+#endif
+
+/* No extra library: LVGL's evdev driver talks to the kernel directly. */
 #define LV_USE_EVDEV       1
 
 #define LV_LINUX_FBDEV_BSD 0

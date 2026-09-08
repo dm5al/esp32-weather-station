@@ -81,6 +81,18 @@ FetchContent_MakeAvailable(lvgl)
 
 target_include_directories(lvgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Turn on the one backend that was asked for, in LVGL's build as well as ours -
+# lv_conf.h defaults all of them to off, so anything not named here is not
+# compiled and its libraries are not needed.
+if(BSP_BACKEND STREQUAL "DRM")
+    set(LV_BACKEND_DEF LV_USE_LINUX_DRM=1)
+elseif(BSP_BACKEND STREQUAL "FBDEV")
+    set(LV_BACKEND_DEF LV_USE_LINUX_FBDEV=1)
+else()
+    set(LV_BACKEND_DEF LV_USE_SDL=1)
+endif()
+target_compile_definitions(lvgl PUBLIC ${LV_BACKEND_DEF})
+
 # ---- shared application sources ---------------------------------------------
 #
 # Listed rather than globbed: a file appearing in main/ that this build has not
