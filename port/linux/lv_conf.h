@@ -9,7 +9,19 @@
 #ifndef LV_CONF_H
 #define LV_CONF_H
 
+/*
+ * Guarded because this file is also preprocessed by the assembler.
+ *
+ * LVGL ships hand-written .S files - Helium and NEON blenders - and every one of
+ * them includes lv_conf_internal.h, which reaches this file, in order to test
+ * whether it should assemble to anything at all. Its own convention is to define
+ * __ASSEMBLY__ before doing so. Without this guard the C declarations in
+ * stdint.h are handed to gas, which reports every typedef as a bad instruction:
+ * hundreds of errors, none of them about the real problem.
+ */
+#ifndef __ASSEMBLY__
 #include <stdint.h>
+#endif
 
 /*
  * RGB565 to match the ESP32 build.
@@ -20,6 +32,13 @@
  * firmware also means what is seen on one target is what is seen on the other.
  */
 #define LV_COLOR_DEPTH 16
+
+/*
+ * No hand-written assembly in the blenders. Helium is Cortex-M and NEON needs
+ * ARMv7; the Pi Zero W is an ARMv6 with VFP and neither applies. Stated rather
+ * than left to the default so the .S files above assemble to nothing on purpose.
+ */
+#define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE
 
 #define LV_USE_STDLIB_MALLOC    LV_STDLIB_CLIB
 #define LV_USE_STDLIB_STRING    LV_STDLIB_CLIB
