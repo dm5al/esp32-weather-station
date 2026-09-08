@@ -144,14 +144,23 @@ pkg_check_modules(CURL REQUIRED libcurl)
 target_include_directories(esp32-weather PRIVATE ${CURL_INCLUDE_DIRS})
 target_link_libraries(esp32-weather PRIVATE lvgl ${CURL_LIBRARIES} m pthread)
 
+# The backend libraries go to LVGL as well as to us. LVGL compiles the driver
+# itself - lv_linux_drm.c, lv_sdl_window.c - so it needs the headers too, and
+# libdrm's xf86drm.h includes <drm.h> from a directory only pkg-config knows
+# about. Giving them only to our own target left LVGL failing on a header it was
+# never told where to find.
 if(BSP_BACKEND STREQUAL "DRM")
     pkg_check_modules(DRM REQUIRED libdrm)
     target_include_directories(esp32-weather PRIVATE ${DRM_INCLUDE_DIRS})
     target_link_libraries(esp32-weather PRIVATE ${DRM_LIBRARIES})
+    target_include_directories(lvgl PUBLIC ${DRM_INCLUDE_DIRS})
+    target_link_libraries(lvgl PUBLIC ${DRM_LIBRARIES})
 elseif(BSP_BACKEND STREQUAL "SDL")
     pkg_check_modules(SDL2 REQUIRED sdl2)
     target_include_directories(esp32-weather PRIVATE ${SDL2_INCLUDE_DIRS})
     target_link_libraries(esp32-weather PRIVATE ${SDL2_LIBRARIES})
+    target_include_directories(lvgl PUBLIC ${SDL2_INCLUDE_DIRS})
+    target_link_libraries(lvgl PUBLIC ${SDL2_LIBRARIES})
 endif()
 
 # cJSON: the firmware gets it from ESP-IDF, so it has to come from the system
