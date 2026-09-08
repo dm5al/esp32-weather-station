@@ -56,10 +56,26 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-set(LV_CONF_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lv_conf.h CACHE FILEPATH "" FORCE)
+#
+# lv_conf.h is found through the include path, not through LV_CONF_PATH.
+#
+# LVGL passes that variable to the compiler unquoted:
+#
+#   target_compile_definitions(lvgl PUBLIC LV_CONF_PATH=${LV_CONF_PATH})
+#
+# so the path arrives at the preprocessor as bare tokens rather than as a string
+# literal, and any token in it that happens to be a predefined macro is
+# substituted. GCC predefines "linux" as 1 on Linux targets, so this directory -
+# port/linux - turned the path into port/1/lv_conf.h and the build failed on a
+# file nobody had ever named. LV_CONF_INCLUDE_SIMPLE makes LVGL include
+# "lv_conf.h" plainly and find ours on the include path, where no expansion can
+# happen.
+set(LV_CONF_INCLUDE_SIMPLE ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(lvgl)
+
+target_include_directories(lvgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ---- shared application sources ---------------------------------------------
 #

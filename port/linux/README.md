@@ -35,7 +35,7 @@ On Raspberry Pi OS (Bookworm or later):
 
 ```bash
 sudo apt install build-essential cmake pkg-config git \
-                 libcurl4-openssl-dev libcjson-dev libdrm-dev libinput-dev
+                 libcurl4-openssl-dev libcjson-dev libdrm-dev
 ```
 
 ```bash
