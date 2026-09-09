@@ -4,8 +4,8 @@ The same weather station, running on a Raspberry Pi with an HDMI display instead
 of a Waveshare panel. Developed against the **Pi Zero W**, but nothing here is
 specific to it — a Zero 2 W, a 3 or a 4 will all work and will all be faster.
 
-**Not tested on hardware yet.** It is written, it is complete, and it has not
-been run on a Pi. Treat the first build as bring-up rather than as an install.
+Brought up on a Pi Zero W with a 1024x600 HDMI panel: DRM comes up at the
+panel's size, the location resolves, and the forecast arrives.
 
 ## What is shared and what is not
 
@@ -132,7 +132,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/home/pi/esp32_weather/port/linux/build/esp32-weather
+ExecStart=/home/pi/esp32-weather-station/port/linux/build/esp32-weather
 Restart=always
 RestartSec=10
 User=pi
@@ -151,8 +151,6 @@ whether stderr is a terminal before colouring anything.
 
 ## Known gaps
 
-- **Not yet run on hardware.** Expect bring-up problems, most likely in DRM
-  setup.
 - The layout adapts to the display size, but the fonts do not: a much larger
   screen gets more whitespace rather than larger text.
 - **No serial console.** The ESP32 build has a REPL for tuning panel timings and
