@@ -107,6 +107,7 @@ set(SHARED_SOURCES
     ${PROJECT_ROOT}/main/ui/ui_settings.c
     ${PROJECT_ROOT}/main/ui/ui_wifi.c
     ${PROJECT_ROOT}/main/ui/i18n.c
+    ${PROJECT_ROOT}/main/ui/weather_icon.c
 )
 file(GLOB FONT_SOURCES ${PROJECT_ROOT}/main/ui/fonts/*.c)
 
@@ -154,11 +155,19 @@ target_compile_options(esp32-weather PRIVATE -Wall -Wextra -Wno-unused-parameter
 
 # ---- making the link fit on a Pi Zero W -------------------------------------
 #
-# The first attempt on real hardware died here, not while compiling. ld maps the
-# whole of LVGL's static archive at once, and on a 426 MB machine that went so
-# deep into swap on an SD card that the kernel kept answering pings while
-# userspace stopped being scheduled at all - alive, unreachable, and needing the
-# power pulled.
+# During the first link on real hardware the machine stopped responding: the
+# kernel kept answering pings while userspace was no longer being scheduled -
+# alive, unreachable, and needing the power pulled.
+#
+# The Pi Zero W has 426 MB and, on this image, no disk swap at all. What free(1)
+# reports is zram: compressed RAM, which buys a little by squeezing pages but
+# cannot supply memory that is not there, and costs CPU to do it. ld maps the
+# whole of LVGL's archive at once, which is exactly the shape of demand zram
+# handles worst.
+#
+# (The link then failed on a missing source file rather than on memory, so these
+# two problems were found together and are not the same problem. The mitigations
+# below stand on their own: this machine has no headroom to spare.)
 #
 #   --no-keep-memory   tells ld to reread from disk rather than hold everything
 #                      in memory. Slower, and slow is available where memory is
