@@ -98,6 +98,32 @@ static bool have_tool(const char *name)
     return run_capture(argv, NULL, 0) == 0;
 }
 
+/**
+ * @brief Copy one field of nmcli's terse output, undoing its escaping.
+ *
+ * With -t, nmcli separates fields with ':' and escapes any literal colon in a
+ * value as "\:". An SSID may contain one, so the separator cannot simply be
+ * searched for.
+ *
+ * @return a pointer to the ':' that ended the field, or to the terminating NUL.
+ */
+static const char *nmcli_field(const char *src, char *dst, size_t dst_sz)
+{
+    size_t n = 0;
+    for (; *src; src++) {
+        if (*src == '\\' && src[1]) {
+            src++; /* whatever follows is literal, including ':' */
+        } else if (*src == ':') {
+            break;
+        }
+        if (n + 1 < dst_sz) {
+            dst[n++] = *src;
+        }
+    }
+    dst[n] = '\0';
+    return src;
+}
+
 /* ---- reading the kernel's view ------------------------------------------- */
 
 /** @brief First interface listed in /proc/net/wireless. */
@@ -159,22 +185,51 @@ static void read_rssi(void)
     fclose(f);
 }
 
+/*
+ * The name of the network we are on, asked of NetworkManager.
+ *
+ * This first asked iwgetid, which was simply wrong: iwgetid and iw both belong
+ * to wireless-tools, and current Raspberry Pi OS images ship neither. The
+ * device therefore reported itself disconnected and offered the network picker
+ * while its own SSH session was running over the network it could not name.
+ *
+ * nmcli is what these images do have - it is how the Pi joined the network in
+ * the first place - so it is asked first, and wireless-tools is kept only as a
+ * fallback for images that still carry it.
+ */
 static void read_ssid(void)
 {
+    s_ssid[0] = '\0';
     if (!find_iface()) {
-        s_ssid[0] = '\0';
         return;
     }
+
+    if (have_tool("nmcli")) {
+        char *const argv[] = {"nmcli", "-t", "-f", "active,ssid", "dev", "wifi", NULL};
+        char buf[8192];
+        if (run_capture(argv, buf, sizeof(buf)) == 0) {
+            char *save = NULL;
+            for (char *line = strtok_r(buf, "\n", &save); line;
+                 line = strtok_r(NULL, "\n", &save)) {
+                char active[8];
+                const char *p = nmcli_field(line, active, sizeof(active));
+                if (strcmp(active, "yes") != 0 || *p != ':') {
+                    continue;
+                }
+                nmcli_field(p + 1, s_ssid, sizeof(s_ssid));
+                if (s_ssid[0]) {
+                    return;
+                }
+            }
+        }
+    }
+
     char *const argv[] = {"iwgetid", s_iface, "-r", NULL};
     char buf[128] = {0};
-    if (run_capture(argv, buf, sizeof(buf)) != 0) {
-        s_ssid[0] = '\0';
-        return;
+    if (run_capture(argv, buf, sizeof(buf)) == 0) {
+        buf[strcspn(buf, "\r\n")] = '\0';
+        snprintf(s_ssid, sizeof(s_ssid), "%.*s", (int)(sizeof(s_ssid) - 1), buf);
     }
-    buf[strcspn(buf, "\r\n")] = '\0';
-    /* An SSID is 32 bytes at most, so anything longer is not one; bound the
-     * copy explicitly rather than relying on snprintf to trim it quietly. */
-    snprintf(s_ssid, sizeof(s_ssid), "%.*s", (int)(sizeof(s_ssid) - 1), buf);
 }
 
 /* ---- the interface ------------------------------------------------------- */
@@ -242,27 +297,22 @@ esp_err_t wifi_mgr_scan(wifi_mgr_ap_t *out, size_t max, size_t *out_found)
     char *save = NULL;
     for (char *line = strtok_r(buf, "\n", &save); line && n < max;
          line = strtok_r(NULL, "\n", &save)) {
-        /* -t gives colon-separated fields, escaping any literal colon as "\:". */
-        char ssid[WIFI_MGR_SSID_MAX + 1] = {0};
-        size_t si = 0;
-        char *p = line;
-        for (; *p && si < sizeof(ssid) - 1; p++) {
-            if (*p == '\\' && p[1]) {
-                ssid[si++] = *++p;
-            } else if (*p == ':') {
-                break;
-            } else {
-                ssid[si++] = *p;
-            }
-        }
+        char ssid[WIFI_MGR_SSID_MAX + 1];
+        const char *p = nmcli_field(line, ssid, sizeof(ssid));
         if (!ssid[0] || *p != ':') {
             continue;
         }
-        int signal = atoi(p + 1);
+
+        char signal_s[8];
+        p = nmcli_field(p + 1, signal_s, sizeof(signal_s));
+        int signal = atoi(signal_s);
 
         /* An empty SECURITY field means an open network. */
-        const char *sec = strchr(p + 1, ':');
-        bool secure = !(sec && sec[1] == '\0');
+        char sec[32] = {0};
+        if (*p == ':') {
+            nmcli_field(p + 1, sec, sizeof(sec));
+        }
+        bool secure = sec[0] != '\0';
 
         snprintf(out[n].ssid, sizeof(out[n].ssid), "%s", ssid);
         /* nmcli reports 0-100; the UI wants dBm, and this is the mapping
