@@ -68,15 +68,22 @@ desktop that already holds it. On a Pi set up with `raspi-config` to boot to
 console this is already the case. The user needs to be in the `video` and
 `render` groups.
 
-Optional pointer input, if a touchscreen or mouse is attached:
+A touchscreen is found automatically: the program looks for an input device
+reporting absolute X and Y, which distinguishes a touch panel from a mouse.
+Event numbers are assigned in probe order and change, so it asks the kernel
+rather than trusting a path.
+
+The device is `root:input`, so the account running this must be in the `input`
+group — the packaged service asks for it. Override the choice if there is more
+than one candidate:
 
 ```bash
 LV_EVDEV=/dev/input/event0 ./build/esp32-weather
 ```
 
-There is deliberately no input by default. An HDMI monitor usually has no touch
-panel, and the weather screen is a display rather than a control surface — the
-settings and Wi-Fi screens are the only places a pointer is needed.
+It runs perfectly well with no pointer at all: the weather screen is a display
+rather than a control surface, and settings and Wi-Fi are the only places input
+is needed.
 
 ## Screen size
 
@@ -136,7 +143,7 @@ ExecStart=/home/pi/esp32-weather-station/port/linux/build/esp32-weather
 Restart=always
 RestartSec=10
 User=pi
-SupplementaryGroups=video render
+SupplementaryGroups=video render input
 
 [Install]
 WantedBy=multi-user.target

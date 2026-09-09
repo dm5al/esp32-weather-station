@@ -19,9 +19,14 @@
  */
 #include "bsp/board.h"
 
+#include <dirent.h>
+#include <fcntl.h>
+#include <linux/input.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "esp_check.h"
 #include "esp_log.h"
@@ -68,6 +73,70 @@ static uint32_t tick_ms(void)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
+/* ---- finding the touchscreen --------------------------------------------- */
+
+/*
+ * Asked of the kernel rather than configured.
+ *
+ * The first version took a path from LV_EVDEV and did nothing without it, on
+ * the reasoning that an HDMI monitor rarely has a touch panel. The panel this
+ * runs on does, and requiring an environment variable to notice hardware that
+ * is plugged in and announcing itself is the wrong default. Event numbers are
+ * also assigned in probe order, so a path that is right today can be wrong
+ * after a reboot, or after a USB device is added.
+ *
+ * A touchscreen is an input device that reports absolute X and Y. A mouse
+ * reports relative movement and is excluded by the same test.
+ */
+#define BITS_PER_LONG_   (sizeof(long) * 8)
+#define NBITS_(x)        ((((x) - 1) / BITS_PER_LONG_) + 1)
+#define TEST_BIT_(b, a)  (((a)[(b) / BITS_PER_LONG_] >> ((b) % BITS_PER_LONG_)) & 1)
+
+static bool is_touchscreen(const char *path, char *name, size_t name_sz)
+{
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        return false;
+    }
+    unsigned long ev[NBITS_(EV_MAX)] = {0};
+    unsigned long abs[NBITS_(ABS_MAX)] = {0};
+    bool ok = false;
+
+    if (ioctl(fd, EVIOCGBIT(0, sizeof(ev)), ev) >= 0 && TEST_BIT_(EV_ABS, ev) &&
+        ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs)), abs) >= 0 && TEST_BIT_(ABS_X, abs) &&
+        TEST_BIT_(ABS_Y, abs)) {
+        ok = true;
+        if (name && name_sz && ioctl(fd, EVIOCGNAME(name_sz), name) < 0) {
+            name[0] = '\0';
+        }
+    }
+    close(fd);
+    return ok;
+}
+
+static bool find_touchscreen(char *out, size_t out_sz, char *name, size_t name_sz)
+{
+    DIR *d = opendir("/dev/input");
+    if (!d) {
+        return false;
+    }
+    bool found = false;
+    const struct dirent *e;
+    while (!found && (e = readdir(d)) != NULL) {
+        if (strncmp(e->d_name, "event", 5) != 0) {
+            continue;
+        }
+        char path[300];
+        snprintf(path, sizeof(path), "/dev/input/%s", e->d_name);
+        if (is_touchscreen(path, name, name_sz)) {
+            snprintf(out, out_sz, "%s", path);
+            found = true;
+        }
+    }
+    closedir(d);
+    return found;
 }
 
 /* ---- bring-up ------------------------------------------------------------ */
@@ -128,22 +197,30 @@ esp_err_t bsp_board_init(void)
 
 #if defined(LV_USE_EVDEV) && LV_USE_EVDEV
     /*
-     * Optional by design. An HDMI monitor usually has no touch panel, and the
-     * settings and Wi-Fi screens are the only places input is needed - the
-     * weather screen is a display, not a control surface. If no device is
-     * configured the program runs perfectly well with no pointer at all.
+     * LV_EVDEV overrides, for the case where the guess is wrong or there is
+     * more than one candidate; otherwise the touchscreen is found by asking.
      */
+    char found[300];
+    char name[128] = {0};
     const char *evdev = getenv("LV_EVDEV");
+
+    if (!(evdev && evdev[0]) && find_touchscreen(found, sizeof(found), name, sizeof(name))) {
+        evdev = found;
+        ESP_LOGI(TAG, "touchscreen: %s (%s)", name[0] ? name : "unnamed", found);
+    }
+
     if (evdev && evdev[0]) {
         lv_indev_t *indev = lv_evdev_create(LV_INDEV_TYPE_POINTER, evdev);
         if (indev) {
             lv_indev_set_display(indev, s_disp);
             ESP_LOGI(TAG, "input from %s", evdev);
         } else {
+            /* Almost always the permission: the device is root:input, so the
+             * account running this has to be in the input group. */
             ESP_LOGW(TAG, "cannot open %s; running without input", evdev);
         }
     } else {
-        ESP_LOGI(TAG, "no LV_EVDEV set; running without input");
+        ESP_LOGI(TAG, "no pointer device found; running without input");
     }
 #endif
 
