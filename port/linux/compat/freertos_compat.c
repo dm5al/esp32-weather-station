@@ -68,10 +68,27 @@ int xTaskCreate(TaskFunction_t fn, const char *name, size_t stack_depth, void *a
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    if (stack_depth < (size_t)PTHREAD_STACK_MIN) {
-        stack_depth = PTHREAD_STACK_MIN;
+
+    /*
+     * The caller's stack size is a floor, not an instruction, and below the
+     * platform default it is ignored entirely.
+     *
+     * main.c asks for 8192, which is roomy under FreeRTOS where the whole
+     * system is measured in tens of kilobytes. On glibc the same thread runs a
+     * TLS handshake through libcurl and OpenSSL, which assume the default eight
+     * megabytes and will spend tens of kilobytes inside a single call. Honouring
+     * 8192 gave the thread PTHREAD_STACK_MIN, and it died inside libcrypto with
+     * a stack too corrupt to produce a backtrace - the fetch succeeded, the
+     * process vanished, and nothing in between said why.
+     *
+     * The default costs address space rather than memory: the pages are
+     * committed only as they are touched, which on a 426 MB Pi matters.
+     */
+    size_t deflt = 0;
+    pthread_attr_getstacksize(&attr, &deflt);
+    if (stack_depth > deflt) {
+        pthread_attr_setstacksize(&attr, stack_depth);
     }
-    pthread_attr_setstacksize(&attr, stack_depth);
 
     pthread_t tid;
     int rc = pthread_create(&tid, &attr, trampoline, t);
