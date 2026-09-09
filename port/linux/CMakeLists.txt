@@ -152,6 +152,25 @@ target_compile_definitions(esp32-weather PRIVATE
 # warning should not stop a weather display from being built.
 target_compile_options(esp32-weather PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
+# ---- making the link fit on a Pi Zero W -------------------------------------
+#
+# The first attempt on real hardware died here, not while compiling. ld maps the
+# whole of LVGL's static archive at once, and on a 426 MB machine that went so
+# deep into swap on an SD card that the kernel kept answering pings while
+# userspace stopped being scheduled at all - alive, unreachable, and needing the
+# power pulled.
+#
+#   --no-keep-memory   tells ld to reread from disk rather than hold everything
+#                      in memory. Slower, and slow is available where memory is
+#                      not.
+#   --gc-sections      with -ffunction-sections/-fdata-sections, drops what is
+#                      never called. LVGL compiles every built-in font and every
+#                      widget; this project uses its own fonts and a handful of
+#                      widgets, so most of that archive is dead weight.
+target_compile_options(esp32-weather PRIVATE -ffunction-sections -fdata-sections)
+target_compile_options(lvgl PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(esp32-weather PRIVATE -Wl,--no-keep-memory -Wl,--gc-sections)
+
 # ---- dependencies -----------------------------------------------------------
 
 find_package(PkgConfig REQUIRED)
