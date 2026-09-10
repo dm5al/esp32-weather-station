@@ -18,8 +18,19 @@ OUT="$PROJECT/main/ui/fonts"
 
 CONV="npx --yes lv_font_conv@1.5.3"
 
-# ASCII + degree + bullet, Latin-1 supplement (aou umlauts, sharp s), Cyrillic.
-TEXT_RANGE='0x20-0x7F,0xB0,0x2022,0xA0-0xFF,0x400-0x4FF'
+# ASCII + degree + bullet, Latin-1 supplement (aou umlauts, sharp s), Latin
+# Extended-A, Cyrillic, and the typographic apostrophe.
+#
+# Latin Extended-A (0x100-0x17F) was added because place names are not ASCII.
+# The geocoder answers with the local spelling - there is no English exonym for
+# Klaipeda, so it comes back as "Klaipėda" whatever language is requested - and
+# the missing glyph drew as a tofu box. That block covers the Baltic, Polish,
+# Czech, Slovak, Hungarian, Turkish and Romanian letters in one go, which is
+# most of the European place names anyone is likely to search for.
+#
+# 0x2019 is the typographic apostrophe, which is what these sources use in
+# names like L'Aquila rather than the ASCII quote.
+TEXT_RANGE='0x20-0x7F,0xB0,0x2022,0xA0-0xFF,0x100-0x17F,0x2019,0x400-0x4FF'
 
 # The LVGL built-in symbol set, copied verbatim from
 # scripts/built_in_font/built_in_font_gen.py so LV_SYMBOL_* keeps working.
