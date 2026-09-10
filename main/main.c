@@ -179,7 +179,7 @@ static void do_refresh(void)
 
     if (!s_have_location) {
         show_status(T(STR_LOCATING), T(STR_LOCATING_DETAIL), true);
-        if (geo_detect(&s_location) == ESP_OK) {
+        if (geo_resolve(&s_location) == ESP_OK) {
             s_have_location = true;
         } else {
             ESP_LOGE(TAG, "geolocation failed");
@@ -260,6 +260,27 @@ static void handle_wifi_state(wifi_mgr_state_t state)
     }
 }
 
+/*
+ * Look a place up by name. Runs here rather than in the LVGL callback because
+ * it is an HTTPS round trip, and the UI task must never block on the network.
+ */
+static void do_search_place(const char *query)
+{
+    static geo_location_t places[GEO_SEARCH_MAX];
+    size_t found = 0;
+
+    const esp_err_t err = geo_search(query, places, GEO_SEARCH_MAX, &found);
+
+    if (bsp_display_lock(0)) {
+        if (err == ESP_OK) {
+            ui_location_set_results(places, found);
+        } else {
+            ui_location_set_status(T(STR_SEARCH_FAILED), true);
+        }
+        bsp_display_unlock();
+    }
+}
+
 static void handle_ui_cmd(const ui_cmd_t *cmd)
 {
     switch (cmd->type) {
@@ -275,6 +296,30 @@ static void handle_ui_cmd(const ui_cmd_t *cmd)
         }
         break;
     case UI_CMD_REFRESH:
+        do_refresh();
+        break;
+
+    case UI_CMD_SEARCH_PLACE:
+        do_search_place(cmd->text);
+        break;
+
+    /*
+     * Both of these drop the location we are holding, so the next refresh
+     * resolves afresh rather than carrying on with the old coordinates. The
+     * refresh is immediate: the operator has just told the display where it is
+     * and should not have to wait a quarter of an hour to be believed.
+     */
+    case UI_CMD_SET_LOCATION:
+        if (geo_set_manual(&cmd->place) == ESP_OK) {
+            s_location = cmd->place;
+            s_have_location = true;
+            do_refresh();
+        }
+        break;
+
+    case UI_CMD_LOCATION_AUTO:
+        geo_set_mode(GEO_MODE_AUTO);
+        s_have_location = false;
         do_refresh();
         break;
     }

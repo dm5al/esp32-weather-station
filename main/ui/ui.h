@@ -37,12 +37,17 @@ typedef enum {
     UI_CMD_WIFI_SCAN,
     UI_CMD_WIFI_CONNECT,
     UI_CMD_REFRESH,
+    UI_CMD_SEARCH_PLACE,   /* query in .text */
+    UI_CMD_SET_LOCATION,   /* geolocate.h place in .place, already chosen */
+    UI_CMD_LOCATION_AUTO,  /* back to detecting from the connection */
 } ui_cmd_type_t;
 
 typedef struct {
     ui_cmd_type_t type;
     char ssid[WIFI_MGR_SSID_MAX + 1];
     char pass[WIFI_MGR_PASS_MAX + 1];
+    char text[64];       /* search query */
+    geo_location_t place; /* chosen search result */
 } ui_cmd_t;
 
 /** @brief Implemented by main.c; must be safe to call from the LVGL task. */
@@ -63,11 +68,23 @@ void ui_show_weather(void);
 /** @brief Show the settings screen (language, network). */
 void ui_show_settings(void);
 
+/** @brief The location screen: automatic or manual, and the place search. */
+void ui_show_location(void);
+
 /** @brief Re-render every screen's text after a language change. */
 void ui_retranslate(void);
 
 /** @brief Replace the AP list in the picker (call after a scan completes). */
 void ui_wifi_set_aps(const wifi_mgr_ap_t *aps, size_t count);
+
+/** @brief Hand search results to the location screen. */
+void ui_location_set_results(const geo_location_t *places, size_t count);
+
+/** @brief A line of status on the location screen; @p error colours it. */
+void ui_location_set_status(const char *text, bool error);
+
+/** @brief Repaint the location screen from the stored mode and place. */
+void ui_location_refresh(void);
 
 /** @brief Show progress/failure text on the picker. */
 void ui_wifi_set_status(const char *text, bool error);

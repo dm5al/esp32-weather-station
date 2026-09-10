@@ -105,6 +105,7 @@ set(SHARED_SOURCES
     ${PROJECT_ROOT}/main/ui/ui.c
     ${PROJECT_ROOT}/main/ui/ui_weather.c
     ${PROJECT_ROOT}/main/ui/ui_settings.c
+    ${PROJECT_ROOT}/main/ui/ui_location.c
     ${PROJECT_ROOT}/main/ui/ui_wifi.c
     ${PROJECT_ROOT}/main/ui/i18n.c
     ${PROJECT_ROOT}/main/ui/weather_icon.c

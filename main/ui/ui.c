@@ -11,6 +11,7 @@ static lv_obj_t *s_scr_status;
 static lv_obj_t *s_scr_wifi;
 static lv_obj_t *s_scr_weather;
 static lv_obj_t *s_scr_settings;
+static lv_obj_t *s_scr_location;
 
 static lv_obj_t *s_status_title;
 static lv_obj_t *s_status_detail;
@@ -70,6 +71,7 @@ void ui_init(void)
     s_scr_wifi = ui_wifi_create();
     s_scr_weather = ui_weather_create();
     s_scr_settings = ui_settings_create();
+    s_scr_location = ui_location_create();
 
     lv_screen_load(s_scr_status);
     ESP_LOGI(TAG, "screens created");
@@ -108,6 +110,19 @@ void ui_retranslate(void)
     ui_wifi_retranslate();
     ui_weather_retranslate();
     ui_settings_retranslate();
+    ui_location_retranslate();
+}
+
+void ui_show_location(void)
+{
+    if (!s_scr_location) {
+        return;
+    }
+    /* The stored mode and place can have changed since the last visit. */
+    ui_location_refresh();
+    if (lv_screen_active() != s_scr_location) {
+        lv_screen_load(s_scr_location);
+    }
 }
 
 void ui_show_wifi(void)

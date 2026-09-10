@@ -13,6 +13,7 @@ idf_component_register(
         "ui/i18n.c"
         "ui/ui.c"
         "ui/ui_settings.c"
+        "ui/ui_location.c"
         "ui/ui_wifi.c"
         "ui/ui_weather.c"
         "ui/weather_icon.c"

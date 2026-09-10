@@ -20,6 +20,8 @@ static lv_obj_t *s_wifi_heading;
 static lv_obj_t *s_wifi_desc;
 static lv_obj_t *s_wifi_btn_label;
 static lv_obj_t *s_wifi_current;
+static lv_obj_t *s_loc_btn_label;
+static lv_obj_t *s_loc_current;
 
 static void paint_language_selection(void)
 {
@@ -50,6 +52,12 @@ static void on_back_clicked(lv_event_t *e)
 {
     (void)e;
     ui_show_weather();
+}
+
+static void on_location_clicked(lv_event_t *e)
+{
+    (void)e;
+    ui_show_location();
 }
 
 static void on_wifi_clicked(lv_event_t *e)
@@ -136,7 +144,16 @@ lv_obj_t *ui_settings_create(void)
     make_button(wifi_card, &s_wifi_btn_label, "", UI_COL_ACCENT, 24, 82, 320, 52, on_wifi_clicked);
     lv_obj_set_style_text_color(s_wifi_btn_label, UI_COL_BG, 0);
 
-    s_wifi_current = make_label(wifi_card, &lv_font_ui_16, UI_COL_MUTED, 368, 98, "");
+    s_wifi_current = make_label(wifi_card, &lv_font_ui_16, UI_COL_MUTED, 368, 60, "");
+
+    /*
+     * Location shares this card rather than getting one of its own: three cards
+     * do not fit in 480 px, and where the forecast is for belongs beside which
+     * network it comes over - both are about how the device reaches the world.
+     */
+    make_button(wifi_card, &s_loc_btn_label, "", UI_COL_CARD_HI, 368, 82, 320, 52,
+                on_location_clicked);
+    s_loc_current = make_label(wifi_card, &lv_font_ui_16, UI_COL_MUTED, 24, 60, "");
 
     ui_settings_retranslate();
     return s_scr;
@@ -157,10 +174,25 @@ void ui_settings_retranslate(void)
     lv_label_set_text(s_wifi_desc, T(STR_WIFI_DESC));
     lv_label_set_text(s_wifi_btn_label, T(STR_CHOOSE_NETWORK));
 
+    lv_label_set_text(s_loc_btn_label, T(STR_LOCATION));
+
     if (wifi_mgr_get_state() == WIFI_MGR_CONNECTED) {
         lv_label_set_text_fmt(s_wifi_current, LV_SYMBOL_WIFI "  %s", wifi_mgr_current_ssid());
     } else {
         lv_label_set_text_fmt(s_wifi_current, LV_SYMBOL_WARNING "  %s", T(STR_OFFLINE));
+    }
+
+    /* Whichever place the forecast is actually being fetched for, so the mode
+     * is visible without opening the screen. */
+    geo_location_t place = {0};
+    const bool manual = (geo_get_mode() == GEO_MODE_MANUAL);
+    const esp_err_t have = manual ? geo_get_manual(&place) : geo_load_cached(&place);
+
+    if (have == ESP_OK && place.city[0]) {
+        lv_label_set_text_fmt(s_loc_current, LV_SYMBOL_GPS "  %s  (%s)", place.city,
+                              manual ? T(STR_LOC_MANUAL) : T(STR_LOC_AUTO));
+    } else {
+        lv_label_set_text_fmt(s_loc_current, LV_SYMBOL_GPS "  %s", T(STR_NOT_SET));
     }
 
     paint_language_selection();

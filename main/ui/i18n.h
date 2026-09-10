@@ -81,6 +81,29 @@ typedef enum {
     X(STR_WIFI_DESC,       "Choose or change the network", "Выбрать или сменить сеть",             \
                            "Netzwerk wählen oder wechseln")                                        \
     X(STR_LANGUAGE_DESC,   "Interface language", "Язык интерфейса", "Sprache der Oberfläche")      \
+    /* ---- location ---- */                                                                       \
+    X(STR_LOCATION,        "Location",         "Местоположение",    "Standort")                    \
+    X(STR_LOCATION_DESC,   "Where the forecast is for", "Для какого места прогноз",                \
+                           "Für welchen Ort die Vorhersage gilt")                                  \
+    X(STR_LOC_AUTO,        "Automatic",        "Автоматически",     "Automatisch")                 \
+    X(STR_LOC_MANUAL,      "Manual",           "Вручную",           "Manuell")                     \
+    X(STR_LOC_AUTO_DESC,   "From the internet connection",                                         \
+                           "По интернет-соединению",                                               \
+                           "Über die Internetverbindung")                                          \
+    X(STR_LOC_MANUAL_DESC, "A place you choose", "Выбранное вами место",                           \
+                           "Ein von Ihnen gewählter Ort")                                          \
+    X(STR_SEARCH_CITY,     "Search for a place", "Поиск места",     "Ort suchen")                   \
+    X(STR_SEARCH,          "Search",           "Найти",             "Suchen")                      \
+    X(STR_SEARCHING,       "Searching...",     "Поиск...",          "Suche läuft...")              \
+    X(STR_NO_RESULTS,      "Nothing found",    "Ничего не найдено", "Nichts gefunden")             \
+    X(STR_SEARCH_FAILED,   "Search failed",    "Ошибка поиска",     "Suche fehlgeschlagen")        \
+    X(STR_NOT_SET,         "not set",          "не задано",         "nicht gesetzt")               \
+    /* The geocoder gives no ISO subdivision code, so a place chosen by hand    \
+     * can only be matched against nationwide holidays. Said plainly rather     \
+     * than letting the operator wonder why a regional day is missing. */       \
+    X(STR_LOC_HOLIDAY_NOTE, "Regional holidays need automatic location",                           \
+                            "Региональные праздники — только при автоопределении",                 \
+                            "Regionale Feiertage nur bei automatischem Standort")                  \
     /* ---- weather screen ---- */                                                                 \
     X(STR_OFFLINE,         "offline",          "нет сети",          "offline")                     \
     X(STR_CONNECTING_LC,   "connecting...",    "подключение...",    "verbinde...")                 \

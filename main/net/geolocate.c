@@ -163,3 +163,192 @@ esp_err_t geo_detect(geo_location_t *out)
     ESP_LOGW(TAG, "all geolocation providers failed, trying cache");
     return geo_load_cached(out);
 }
+
+/* ---- manual location ------------------------------------------------------
+ *
+ * Stored beside the automatic cache in the same namespace, under its own keys,
+ * so switching back to automatic does not lose the chosen place and switching
+ * to manual does not discard the last detected one.
+ */
+
+#define NVS_KEY_MODE   "mode"
+#define NVS_KEY_MANUAL "manual"
+
+geo_mode_t geo_get_mode(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) {
+        return GEO_MODE_AUTO;
+    }
+    uint8_t stored = GEO_MODE_AUTO;
+    if (nvs_get_u8(h, NVS_KEY_MODE, &stored) != ESP_OK || stored > GEO_MODE_MANUAL) {
+        stored = GEO_MODE_AUTO;
+    }
+    nvs_close(h);
+    return (geo_mode_t)stored;
+}
+
+esp_err_t geo_set_mode(geo_mode_t mode)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_u8(h, NVS_KEY_MODE, (uint8_t)mode);
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    ESP_LOGI(TAG, "location mode: %s", mode == GEO_MODE_MANUAL ? "manual" : "automatic");
+    return err;
+}
+
+esp_err_t geo_get_manual(geo_location_t *out)
+{
+    ESP_RETURN_ON_FALSE(out, ESP_ERR_INVALID_ARG, TAG, "bad args");
+
+    nvs_handle_t h;
+    esp_err_t open_err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    if (open_err != ESP_OK) {
+        return open_err;
+    }
+    size_t len = sizeof(*out);
+    esp_err_t err = nvs_get_blob(h, NVS_KEY_MANUAL, out, &len);
+    nvs_close(h);
+
+    if (err == ESP_OK && len != sizeof(*out)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return err;
+}
+
+esp_err_t geo_set_manual(const geo_location_t *loc)
+{
+    ESP_RETURN_ON_FALSE(loc, ESP_ERR_INVALID_ARG, TAG, "bad args");
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_blob(h, NVS_KEY_MANUAL, loc, sizeof(*loc));
+    if (err == ESP_OK) {
+        err = nvs_set_u8(h, NVS_KEY_MODE, (uint8_t)GEO_MODE_MANUAL);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+
+    ESP_LOGI(TAG, "manual location: %s, %s (%.4f, %.4f) tz=%s", loc->city, loc->country,
+             loc->latitude, loc->longitude, loc->timezone);
+    return err;
+}
+
+esp_err_t geo_resolve(geo_location_t *out)
+{
+    ESP_RETURN_ON_FALSE(out, ESP_ERR_INVALID_ARG, TAG, "bad args");
+
+    if (geo_get_mode() == GEO_MODE_MANUAL) {
+        if (geo_get_manual(out) == ESP_OK) {
+            ESP_LOGI(TAG, "using manual location: %s (%.4f, %.4f)", out->city, out->latitude,
+                     out->longitude);
+            return ESP_OK;
+        }
+        /* Set to manual but never given a place. Detecting is better than
+         * refusing to show a forecast at all. */
+        ESP_LOGW(TAG, "manual mode with no place set; detecting instead");
+    }
+    return geo_detect(out);
+}
+
+/* ---- search --------------------------------------------------------------- */
+
+#define GEOCODE_URL_FMT                                        \
+    "https://geocoding-api.open-meteo.com/v1/search"           \
+    "?name=%s&count=%d&language=en&format=json"
+
+/* Percent-encode everything that is not unreserved. Place names carry spaces,
+ * accents and the occasional apostrophe, and all of them arrive here from an
+ * on-screen keyboard. */
+static void url_escape(const char *src, char *dst, size_t dst_sz)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    size_t n = 0;
+    for (; *src && n + 4 < dst_sz; src++) {
+        unsigned char c = (unsigned char)*src;
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~') {
+            dst[n++] = (char)c;
+        } else {
+            dst[n++] = '%';
+            dst[n++] = hex[c >> 4];
+            dst[n++] = hex[c & 0x0f];
+        }
+    }
+    dst[n] = '\0';
+}
+
+esp_err_t geo_search(const char *query, geo_location_t *out, size_t max, size_t *found)
+{
+    ESP_RETURN_ON_FALSE(query && out && found && max, ESP_ERR_INVALID_ARG, TAG, "bad args");
+    *found = 0;
+
+    char escaped[192];
+    url_escape(query, escaped, sizeof(escaped));
+
+    char url[320];
+    int n = snprintf(url, sizeof(url), GEOCODE_URL_FMT, escaped, (int)max);
+    ESP_RETURN_ON_FALSE(n > 0 && n < (int)sizeof(url), ESP_ERR_INVALID_SIZE, TAG, "url too long");
+
+    char *body = NULL;
+    ESP_RETURN_ON_ERROR(http_get_body(url, &body, NULL), TAG, "search failed");
+
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    if (!root) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    /* No "results" key at all is how this API says "nothing matched"; that is
+     * an empty list, not a failure. */
+    const cJSON *results = cJSON_GetObjectItemCaseSensitive(root, "results");
+    if (!cJSON_IsArray(results)) {
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+
+    size_t count = 0;
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, results) {
+        if (count >= max) {
+            break;
+        }
+        const cJSON *lat = cJSON_GetObjectItemCaseSensitive(item, "latitude");
+        const cJSON *lon = cJSON_GetObjectItemCaseSensitive(item, "longitude");
+        if (!cJSON_IsNumber(lat) || !cJSON_IsNumber(lon)) {
+            continue;
+        }
+
+        geo_location_t *g = &out[count];
+        memset(g, 0, sizeof(*g));
+        g->latitude = (float)lat->valuedouble;
+        g->longitude = (float)lon->valuedouble;
+        copy_str(g->city, sizeof(g->city), cJSON_GetObjectItemCaseSensitive(item, "name"));
+        copy_str(g->region, sizeof(g->region), cJSON_GetObjectItemCaseSensitive(item, "admin1"));
+        copy_str(g->country, sizeof(g->country), cJSON_GetObjectItemCaseSensitive(item, "country"));
+        copy_str(g->timezone, sizeof(g->timezone),
+                 cJSON_GetObjectItemCaseSensitive(item, "timezone"));
+        copy_str(g->country_code, sizeof(g->country_code),
+                 cJSON_GetObjectItemCaseSensitive(item, "country_code"));
+        /* region_code is deliberately left empty: see geo_search() in the
+         * header. The geocoder returns the region's name, not its ISO code. */
+        count++;
+    }
+
+    cJSON_Delete(root);
+    *found = count;
+    ESP_LOGI(TAG, "search \"%s\": %u results", query, (unsigned)count);
+    return ESP_OK;
+}
