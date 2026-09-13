@@ -205,19 +205,38 @@ static void read_ssid(void)
     }
 
     if (have_tool("nmcli")) {
-        char *const argv[] = {"nmcli", "-t", "-f", "active,ssid", "dev", "wifi", NULL};
-        char buf[8192];
+        /*
+         * "dev show", not "dev wifi".
+         *
+         * This asked "nmcli dev wifi" for the row marked active, which reads
+         * the scan list - and nmcli rescans when that list is more than thirty
+         * seconds old. So every enquiry about the current network could start
+         * a scan, and scanning while associated is disruptive: on the BCM43430
+         * in a Pi Zero W it is one of the reliable ways to drop a link. Asking
+         * what the connection is takes the same time and starts nothing.
+         *
+         * What comes back is the connection profile's name. That is the SSID
+         * unless someone has renamed the profile, and it is the name
+         * NetworkManager itself shows, so it is the right thing to display
+         * either way.
+         */
+        char *const argv[] = {"nmcli", "-t", "-f", "GENERAL.CONNECTION", "dev", "show", s_iface,
+                              NULL};
+        char buf[512];
         if (run_capture(argv, buf, sizeof(buf)) == 0) {
             char *save = NULL;
             for (char *line = strtok_r(buf, "\n", &save); line;
                  line = strtok_r(NULL, "\n", &save)) {
-                char active[8];
-                const char *p = nmcli_field(line, active, sizeof(active));
-                if (strcmp(active, "yes") != 0 || *p != ':') {
+                char key[32];
+                const char *p = nmcli_field(line, key, sizeof(key));
+                if (strcmp(key, "GENERAL.CONNECTION") != 0 || *p != ':') {
                     continue;
                 }
-                nmcli_field(p + 1, s_ssid, sizeof(s_ssid));
-                if (s_ssid[0]) {
+                char value[WIFI_MGR_SSID_MAX + 1];
+                nmcli_field(p + 1, value, sizeof(value));
+                /* Not associated reads as "--", which is a name for nothing. */
+                if (value[0] && strcmp(value, "--") != 0) {
+                    snprintf(s_ssid, sizeof(s_ssid), "%s", value);
                     return;
                 }
             }
@@ -314,10 +333,36 @@ esp_err_t wifi_mgr_scan(wifi_mgr_ap_t *out, size_t max, size_t *out_found)
         }
         bool secure = sec[0] != '\0';
 
-        snprintf(out[n].ssid, sizeof(out[n].ssid), "%s", ssid);
         /* nmcli reports 0-100; the UI wants dBm, and this is the mapping
          * NetworkManager itself uses in reverse. */
-        out[n].rssi = (int8_t)((signal / 2) - 100);
+        const int8_t rssi = (int8_t)((signal / 2) - 100);
+
+        /*
+         * One entry per network, not one per radio.
+         *
+         * nmcli lists every BSS it can hear, so a mesh or a dual-band router
+         * appears once per access point - three identical "Dm5al" rows on the
+         * network this was found on. The operator is choosing a network, not a
+         * radio, and cannot tell the duplicates apart anyway. Keep the
+         * strongest sighting of each name.
+         */
+        bool merged = false;
+        for (size_t k = 0; k < n; k++) {
+            if (strcmp(out[k].ssid, ssid) == 0) {
+                if (rssi > out[k].rssi) {
+                    out[k].rssi = rssi;
+                    out[k].secure = secure;
+                }
+                merged = true;
+                break;
+            }
+        }
+        if (merged) {
+            continue;
+        }
+
+        snprintf(out[n].ssid, sizeof(out[n].ssid), "%s", ssid);
+        out[n].rssi = rssi;
         out[n].secure = secure;
         n++;
     }
